@@ -6,7 +6,7 @@ use crossbeam::atomic::AtomicCell;
 use egui::Context;
 use egui_baseview::EguiWindow;
 use nih_plug::prelude::{Editor, GuiContext, ParamSetter, ParentWindowHandle};
-use parking_lot::RwLock;
+use std::cell::Cell;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use crate::EguiState;
 pub(crate) struct EguiEditor<T> {
     pub(crate) egui_state: Arc<EguiState>,
     /// The plugin's state. This is kept in between editor openenings.
-    pub(crate) user_state: Arc<RwLock<T>>,
+    pub(crate) user_state: Cell<Option<T>>, // `Some` value will be "moved" to `EguiWindow` (TODO: this would panick if `spawn` is called multiple times for single plugin `editor` call)
 
     /// The user's build function. Applied once at the start of the application.
     pub(crate) build: Arc<dyn Fn(&Context, &mut T) + 'static + Send + Sync>,
@@ -30,7 +30,7 @@ pub(crate) struct EguiEditor<T> {
 
 impl<T> Editor for EguiEditor<T>
 where
-    T: 'static + Send + Sync,
+    T: 'static + Send,
 {
     fn spawn(
         &self,
@@ -39,7 +39,7 @@ where
     ) -> Box<dyn std::any::Any + Send> {
         let build = self.build.clone();
         let update = self.update.clone();
-        let state = self.user_state.clone();
+        let state = self.user_state.replace(None).unwrap();
 
         let (unscaled_width, unscaled_height) = self.egui_state.size();
         let scaling_factor = self.scaling_factor.load();
@@ -72,7 +72,7 @@ where
                 }),
             },
             state,
-            move |egui_ctx, _queue, state| build(egui_ctx, &mut state.write()),
+            move |egui_ctx, _queue, state| build(egui_ctx, state),
             move |egui_ctx, _queue, state| {
                 let setter = ParamSetter::new(context.as_ref());
 
@@ -81,7 +81,7 @@ where
                 // this we would also have a blank GUI when it gets first opened because most DAWs open
                 // their GUI while the window is still unmapped.
                 egui_ctx.request_repaint();
-                (update)(egui_ctx, &setter, &mut state.write());
+                (update)(egui_ctx, &setter, state);
             },
         );
 

@@ -9,8 +9,8 @@ use crossbeam::atomic::AtomicCell;
 use egui::Context;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::{Editor, ParamSetter};
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -40,13 +40,13 @@ pub fn create_egui_editor<T, B, U>(
     update: U,
 ) -> Option<Box<dyn Editor>>
 where
-    T: 'static + Send + Sync,
+    T: 'static + Send,
     B: Fn(&Context, &mut T) + 'static + Send + Sync,
     U: Fn(&Context, &ParamSetter, &mut T) + 'static + Send + Sync,
 {
     Some(Box::new(editor::EguiEditor {
         egui_state,
-        user_state: Arc::new(RwLock::new(user_state)),
+        user_state: Cell::new(Some(user_state)),
         build: Arc::new(build),
         update: Arc::new(update),
 
